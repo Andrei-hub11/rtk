@@ -39,6 +39,55 @@ pub fn run(args: &[String], verbose: u8) -> Result<i32> {
     )
 }
 
+/// Run a `next` invocation that originated from `npx next`.
+///
+/// Only `next build` has a compact-output parser. Other Next.js subcommands
+/// must retain their original arguments and output, otherwise a successful
+/// looking build summary can hide that the requested command never ran.
+pub fn run_npx(args: &[String], verbose: u8) -> Result<i32> {
+    match npx_invocation(args) {
+        NpxInvocation::Build(build_args) => run(build_args, verbose),
+        NpxInvocation::Passthrough(passthrough_args) => run_passthrough(passthrough_args, verbose),
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum NpxInvocation<'a> {
+    Build(&'a [String]),
+    Passthrough(&'a [String]),
+}
+
+fn npx_invocation(args: &[String]) -> NpxInvocation<'_> {
+    match args.first() {
+        Some(subcommand) if subcommand == "build" => NpxInvocation::Build(&args[1..]),
+        _ => NpxInvocation::Passthrough(args),
+    }
+}
+
+fn run_passthrough(args: &[String], verbose: u8) -> Result<i32> {
+    let next_exists = tool_exists("next");
+    let mut cmd = if next_exists {
+        resolved_command("next")
+    } else {
+        let mut c = resolved_command("npx");
+        c.arg("next");
+        c
+    };
+    cmd.args(args);
+
+    let tool = if next_exists { "next" } else { "npx next" };
+    if verbose > 0 {
+        eprintln!("Running without output filtering: {} {}", tool, args.join(" "));
+    }
+    runner::run(
+        cmd,
+        tool,
+        &args.join(" "),
+        runner::RunMode::Passthrough,
+        runner::RunOptions::default(),
+    )
+}
+
 /// Filter Next.js build output - extract routes, bundles, warnings
 fn filter_next_build(output: &str) -> String {
     // Bundle size pattern
@@ -218,5 +267,23 @@ Route (app)                    Size     First Load JS
             Some("1250ms".to_string())
         );
         assert_eq!(extract_time("No time here"), None);
+    }
+
+    #[test]
+    fn npx_typegen_is_passthrough_with_its_arguments_intact() {
+        let args = ["typegen".to_string(), "--flag".to_string()];
+
+        assert_eq!(
+            npx_invocation(&args),
+            NpxInvocation::Passthrough(&args),
+        );
+    }
+
+    #[test]
+    fn npx_build_is_the_only_filtered_subcommand() {
+        let args = ["build".to_string(), "--turbo".to_string()];
+
+        assert_eq!(npx_invocation(&args), NpxInvocation::Build(&args[1..]));
+        assert_eq!(npx_invocation(&[]), NpxInvocation::Passthrough(&[]));
     }
 }

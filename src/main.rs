@@ -2366,7 +2366,7 @@ fn run_cli() -> Result<i32> {
                         core::utils::exit_code_from_status(&status, "npx prisma")
                     }
                 }
-                "next" => next_cmd::run(&args[1..], cli.verbose)?,
+                "next" => next_cmd::run_npx(&args[1..], cli.verbose)?,
                 "prettier" => prettier_cmd::run(&args[1..], cli.verbose)?,
                 "playwright" => playwright_cmd::run(&args[1..], cli.verbose)?,
                 _ => npm_cmd::exec(&args, cli.verbose, cli.skip_env)?,
